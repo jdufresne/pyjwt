@@ -1,8 +1,10 @@
 import hashlib
 import hmac
 import json
+from typing import Dict
 
 from .exceptions import InvalidKeyError
+from .types import JWKData
 from .utils import (
     base64url_decode,
     base64url_encode,
@@ -61,7 +63,7 @@ requires_cryptography = {
 }
 
 
-def get_default_algorithms():
+def get_default_algorithms() -> Dict[str, "Algorithm"]:
     """
     Returns the algorithms that are implemented by the library.
     """
@@ -99,14 +101,14 @@ class Algorithm:
     The interface for an algorithm used to sign and verify tokens.
     """
 
-    def prepare_key(self, key):
+    def prepare_key(self, key: str) -> str:
         """
         Performs necessary validation and conversions on the key and returns
         the key value in the proper format for sign() and verify().
         """
         raise NotImplementedError
 
-    def sign(self, msg, key):
+    def sign(self, msg, key) -> bytes:
         """
         Returns a digital signature for the specified message
         using the specified key value.
@@ -128,7 +130,7 @@ class Algorithm:
         raise NotImplementedError
 
     @staticmethod
-    def from_jwk(jwk):
+    def from_jwk(jwk: JWKData) -> bytes:
         """
         Deserializes a given RSA key from JWK back into a PublicKey or PrivateKey object
         """
@@ -150,7 +152,7 @@ class NoneAlgorithm(Algorithm):
 
         return key
 
-    def sign(self, msg, key):
+    def sign(self, msg, key) -> bytes:
         return b""
 
     def verify(self, msg, key, sig):
@@ -198,7 +200,7 @@ class HMACAlgorithm(Algorithm):
         )
 
     @staticmethod
-    def from_jwk(jwk):
+    def from_jwk(jwk: JWKData) -> bytes:
         obj = json.loads(jwk)
 
         if obj.get("kty") != "oct":
@@ -206,7 +208,7 @@ class HMACAlgorithm(Algorithm):
 
         return base64url_decode(obj["k"])
 
-    def sign(self, msg, key):
+    def sign(self, msg, key: bytes) -> bytes:
         return hmac.new(key, msg, self.hash_alg).digest()
 
     def verify(self, msg, key, sig):
@@ -284,7 +286,7 @@ if has_crypto:
             return json.dumps(obj)
 
         @staticmethod
-        def from_jwk(jwk):
+        def from_jwk(jwk: JWKData) -> bytes:
             try:
                 if isinstance(jwk, str):
                     obj = json.loads(jwk)
@@ -357,7 +359,7 @@ if has_crypto:
             else:
                 raise InvalidKeyError("Not a public or private key")
 
-        def sign(self, msg, key):
+        def sign(self, msg, key) -> bytes:
             return key.sign(msg, padding.PKCS1v15(), self.hash_alg())
 
         def verify(self, msg, key, sig):
@@ -405,7 +407,7 @@ if has_crypto:
 
             return key
 
-        def sign(self, msg, key):
+        def sign(self, msg, key) -> bytes:
             der_sig = key.sign(msg, ec.ECDSA(self.hash_alg()))
 
             return der_to_raw_signature(der_sig, key.curve)
@@ -423,7 +425,7 @@ if has_crypto:
                 return False
 
         @staticmethod
-        def from_jwk(jwk):
+        def from_jwk(jwk: JWKData) -> bytes:
 
             try:
                 obj = json.loads(jwk)
@@ -488,7 +490,7 @@ if has_crypto:
         Performs a signature using RSASSA-PSS with MGF1
         """
 
-        def sign(self, msg, key):
+        def sign(self, msg, key) -> bytes:
             return key.sign(
                 msg,
                 padding.PSS(
@@ -542,7 +544,7 @@ if has_crypto:
 
             raise TypeError("Expecting a PEM-formatted or OpenSSH key.")
 
-        def sign(self, msg, key):
+        def sign(self, msg, key) -> bytes:
             """
             Sign a message ``msg`` using the Ed25519 private key ``key``
             :param str|bytes msg: Message to sign

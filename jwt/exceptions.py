@@ -47,10 +47,10 @@ class InvalidAlgorithmError(InvalidTokenError):
 
 
 class MissingRequiredClaimError(InvalidTokenError):
-    def __init__(self, claim):
+    def __init__(self, claim: str):
         self.claim = claim
 
-    def __str__(self):
+    def __str__(self) -> str:
         return 'Token is missing the "%s" claim' % self.claim
 
 

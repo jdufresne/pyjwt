@@ -14,16 +14,17 @@ from .exceptions import (
     InvalidIssuerError,
     MissingRequiredClaimError,
 )
+from .types import DecodeOptions, JOSEHeader, JWTPayload
 
 
 class PyJWT:
-    def __init__(self, options=None):
+    def __init__(self, options: Optional[DecodeOptions] = None):
         if options is None:
             options = {}
         self.options = {**self._get_default_options(), **options}
 
     @staticmethod
-    def _get_default_options() -> Dict[str, Union[bool, List[str]]]:
+    def _get_default_options() -> DecodeOptions:
         return {
             "verify_signature": True,
             "verify_exp": True,
@@ -36,10 +37,10 @@ class PyJWT:
 
     def encode(
         self,
-        payload: Dict[str, Any],
+        payload: JWTPayload,
         key: str,
         algorithm: str = "HS256",
-        headers: Optional[Dict] = None,
+        headers: Optional[JOSEHeader] = None,
         json_encoder: Optional[Type[json.JSONEncoder]] = None,
     ) -> str:
         # Check that we get a mapping
@@ -53,10 +54,13 @@ class PyJWT:
         payload = payload.copy()
         for time_claim in ["exp", "iat", "nbf"]:
             # Convert datetime to a intDate value in known time-format claims
-            if isinstance(payload.get(time_claim), datetime):
-                payload[time_claim] = timegm(
-                    payload[time_claim].utctimetuple()
-                )
+            try:
+                val = payload[time_claim]
+            except KeyError:
+                pass
+            else:
+                if isinstance(val, datetime):
+                    payload[time_claim] = timegm(val.utctimetuple())
 
         json_payload = json.dumps(
             payload, separators=(",", ":"), cls=json_encoder
@@ -70,9 +74,9 @@ class PyJWT:
         self,
         jwt: str,
         key: str = "",
-        algorithms: List[str] = None,
-        options: Dict = None,
-        **kwargs,
+        algorithms: Optional[List[str]] = None,
+        options: Optional[DecodeOptions] = None,
+        **kwargs: Any,
     ) -> Dict[str, Any]:
         if options is None:
             options = {"verify_signature": True}
@@ -110,16 +114,22 @@ class PyJWT:
         self,
         jwt: str,
         key: str = "",
-        algorithms: List[str] = None,
-        options: Dict = None,
+        algorithms: Optional[List[str]] = None,
+        options: Optional[DecodeOptions] = None,
         **kwargs,
     ) -> Dict[str, Any]:
         decoded = self.decode_complete(jwt, key, algorithms, options, **kwargs)
         return decoded["payload"]
 
     def _validate_claims(
-        self, payload, options, audience=None, issuer=None, leeway=0, **kwargs
-    ):
+        self,
+        payload: JWTPayload,
+        options: DecodeOptions,
+        audience: Optional[Union[str, List[str]]] = None,
+        issuer: Optional[str] = None,
+        leeway: Union[float, timedelta] = 0,
+        **kwargs: Any,
+    ) -> None:
         if isinstance(leeway, timedelta):
             leeway = leeway.total_seconds()
 
@@ -145,31 +155,45 @@ class PyJWT:
         if options["verify_aud"]:
             self._validate_aud(payload, audience)
 
-    def _validate_required_claims(self, payload, options):
+    def _validate_required_claims(
+        self, payload: JWTPayload, options: DecodeOptions
+    ) -> None:
         for claim in options["require"]:
             if payload.get(claim) is None:
                 raise MissingRequiredClaimError(claim)
 
-    def _validate_iat(self, payload, now, leeway):
+    def _validate_iat(
+        self, payload: JWTPayload, now: float, leeway: float
+    ) -> None:
+        iat = payload["iat"]
+        assert isinstance(iat, (str, int))
         try:
-            int(payload["iat"])
+            int(iat)
         except ValueError:
             raise InvalidIssuedAtError(
                 "Issued At claim (iat) must be an integer."
             )
 
-    def _validate_nbf(self, payload, now, leeway):
+    def _validate_nbf(
+        self, payload: JWTPayload, now: float, leeway: float
+    ) -> None:
+        nbf = payload["nbf"]
+        assert isinstance(nbf, (str, int))
         try:
-            nbf = int(payload["nbf"])
+            nbf = int(nbf)
         except ValueError:
             raise DecodeError("Not Before claim (nbf) must be an integer.")
 
         if nbf > (now + leeway):
             raise ImmatureSignatureError("The token is not yet valid (nbf)")
 
-    def _validate_exp(self, payload, now, leeway):
+    def _validate_exp(
+        self, payload: JWTPayload, now: float, leeway: float
+    ) -> None:
+        exp = payload["exp"]
+        assert isinstance(exp, (str, int))
         try:
-            exp = int(payload["exp"])
+            exp = int(exp)
         except ValueError:
             raise DecodeError(
                 "Expiration Time claim (exp) must be an" " integer."
@@ -178,7 +202,9 @@ class PyJWT:
         if exp < (now - leeway):
             raise ExpiredSignatureError("Signature has expired")
 
-    def _validate_aud(self, payload, audience):
+    def _validate_aud(
+        self, payload: JWTPayload, audience: Optional[Union[str, List[str]]]
+    ) -> None:
         if audience is None and "aud" not in payload:
             return
 
@@ -192,6 +218,7 @@ class PyJWT:
             # the token has the 'aud' claim
             raise InvalidAudienceError("Invalid audience")
 
+        assert audience is not None
         audience_claims = payload["aud"]
 
         if isinstance(audience_claims, str):
@@ -201,13 +228,15 @@ class PyJWT:
         if any(not isinstance(c, str) for c in audience_claims):
             raise InvalidAudienceError("Invalid claim format in token")
 
-        if isinstance(audience, str):
+        if isinstance(audience, (bytes, str)):
             audience = [audience]
 
         if not any(aud in audience_claims for aud in audience):
             raise InvalidAudienceError("Invalid audience")
 
-    def _validate_iss(self, payload, issuer):
+    def _validate_iss(
+        self, payload: JWTPayload, issuer: Optional[str]
+    ) -> None:
         if issuer is None:
             return
 

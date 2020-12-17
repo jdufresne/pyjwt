@@ -1,7 +1,7 @@
 import binascii
 import json
 from collections.abc import Mapping
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional, Tuple, Type, Union
 
 from .algorithms import (
     Algorithm,
@@ -15,13 +15,18 @@ from .exceptions import (
     InvalidSignatureError,
     InvalidTokenError,
 )
+from .types import DecodeOptions, JOSEHeader
 from .utils import base64url_decode, base64url_encode
 
 
 class PyJWS:
     header_typ = "JWT"
 
-    def __init__(self, algorithms=None, options=None):
+    def __init__(
+        self,
+        algorithms: Optional[Dict[str, Algorithm]] = None,
+        options: Optional[DecodeOptions] = None,
+    ):
         self._algorithms = get_default_algorithms()
         self._valid_algs = (
             set(algorithms)
@@ -39,10 +44,10 @@ class PyJWS:
         self.options = {**self._get_default_options(), **options}
 
     @staticmethod
-    def _get_default_options():
+    def _get_default_options() -> DecodeOptions:
         return {"verify_signature": True}
 
-    def register_algorithm(self, alg_id, alg_obj):
+    def register_algorithm(self, alg_id: str, alg_obj: Algorithm) -> None:
         """
         Registers a new Algorithm for use when creating and verifying tokens.
         """
@@ -55,7 +60,7 @@ class PyJWS:
         self._algorithms[alg_id] = alg_obj
         self._valid_algs.add(alg_id)
 
-    def unregister_algorithm(self, alg_id):
+    def unregister_algorithm(self, alg_id: str) -> None:
         """
         Unregisters an Algorithm for use when creating and verifying tokens
         Throws KeyError if algorithm is not registered.
@@ -69,7 +74,7 @@ class PyJWS:
         del self._algorithms[alg_id]
         self._valid_algs.remove(alg_id)
 
-    def get_algorithms(self):
+    def get_algorithms(self) -> List[str]:
         """
         Returns a list of supported values for the 'alg' parameter.
         """
@@ -80,7 +85,7 @@ class PyJWS:
         payload: bytes,
         key: str,
         algorithm: str = "HS256",
-        headers: Optional[Dict] = None,
+        headers: Optional[JOSEHeader] = None,
         json_encoder: Optional[Type[json.JSONEncoder]] = None,
     ) -> str:
         segments = []
@@ -131,9 +136,9 @@ class PyJWS:
         self,
         jwt: str,
         key: str = "",
-        algorithms: List[str] = None,
-        options: Dict = None,
-        **kwargs,
+        algorithms: Optional[List[str]] = None,
+        options: Optional[DecodeOptions] = None,
+        **kwargs: Any,
     ) -> Dict[str, Any]:
         if options is None:
             options = {}
@@ -162,14 +167,14 @@ class PyJWS:
         self,
         jwt: str,
         key: str = "",
-        algorithms: List[str] = None,
-        options: Dict = None,
-        **kwargs,
+        algorithms: Optional[List[str]] = None,
+        options: Optional[DecodeOptions] = None,
+        **kwargs: Any,
     ) -> str:
         decoded = self.decode_complete(jwt, key, algorithms, options, **kwargs)
         return decoded["payload"]
 
-    def get_unverified_header(self, jwt):
+    def get_unverified_header(self, jwt: Union[bytes, str]) -> JOSEHeader:
         """Returns back the JWT header parameters as a dict()
 
         Note: The signature is not verified so the header parameters
@@ -180,7 +185,9 @@ class PyJWS:
 
         return headers
 
-    def _load(self, jwt):
+    def _load(
+        self, jwt: Union[bytes, str]
+    ) -> Tuple[bytes, bytes, JOSEHeader, bytes]:
         if isinstance(jwt, str):
             jwt = jwt.encode("utf-8")
 
@@ -220,12 +227,12 @@ class PyJWS:
 
     def _verify_signature(
         self,
-        signing_input,
-        header,
-        signature,
-        key="",
-        algorithms=None,
-    ):
+        signing_input: bytes,
+        header: JOSEHeader,
+        signature: bytes,
+        key: str = "",
+        algorithms: Optional[List[str]] = None,
+    ) -> None:
 
         alg = header.get("alg")
 
@@ -244,11 +251,11 @@ class PyJWS:
         except KeyError:
             raise InvalidAlgorithmError("Algorithm not supported")
 
-    def _validate_headers(self, headers):
+    def _validate_headers(self, headers: JOSEHeader) -> None:
         if "kid" in headers:
             self._validate_kid(headers["kid"])
 
-    def _validate_kid(self, kid):
+    def _validate_kid(self, kid: str):
         if not isinstance(kid, str):
             raise InvalidTokenError("Key ID header parameter must be a string")
 
